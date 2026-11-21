@@ -1,32 +1,52 @@
 # SWML (Swarm Lite)
 
-面向 [Antigravity](https://antigravity.google/) 的轻量化主从隔离研发调度技能（触发指令：`/swml`）—— **主会话纯控制面 + 执行面 Hydrogen Worker**。
+给 [Antigravity](https://antigravity.google/) 用的轻量化主从分工技能（输入 `/swml` 触发）。
+
+一句话总结：**让聪明的主模型只当“大脑”——聊需求、定方案、最后看 diff 验收；把翻代码、改代码、跑编译、跑测试这些又长又吵的脏活累活，全都甩给独立的 Hydrogen Worker 去干。**
 
 > **为什么叫 `swml`？**  
-> `swml` = **Sw**ar**m** **L**ite。4 字母极简斜杠指令（`/swml`），精准体现“基于原生 `swarm`、零伴生角色开销、上下文信噪比隔离”的轻量化调度定位。
+> `swml` 是 **Sw**ar**m** **L**ite 的缩写：敲 `/swml` 只有 4 个字母顺手好记，意思就是“精简版 Swarm”。
 
 ---
 
-## 核心特性
+## 为什么做这个？
 
-1. **控制面与执行面按信噪比切分**
-   - **主会话（控制面）**：保留高推理主模型（如 Neon / Carbon / Opus 等），专注需求交互、方案设计、局部抽检与最终只读 `git status` / `git diff` 审计，远离海量编译与测试日志污染。
-   - **Hydrogen Worker（执行面）**：默认固定绑定 `gemini-4-hydrogen-high`，全权接管跨目录检索、批量改码、全量构建与单测、外部环境验证、本机联调部署及 Git 写操作。
-2. **极简轻量化纪律**
-   - 仅按需创建业务执行 Worker，严禁创建 `narrator`、`monitor`、专职审查员等伴生开销角色。
-   - 无在途 Worker 时的纯文档改动或 `≤ 5` 行确定性微调由主会话直通完成，避免冷启动开销倒挂；主从同模时自适应收敛。
-3. **看板原生无损共享与零空转启动**
-   - 无需落盘临时协议文件，完整规格、接口签名、边界条件与绝对路径行号直接上板；多 Worker 通过看板 `#seq` 安全共享规格。
-   - 内联【Worker 执行铁律】：绝对路径约束、`±40` 行按窗精读、测试隔离与反作弊守则、编译 3 次 / 算法 2 次硬熔断（`[CIRCUIT_BREAK]`）。
-4. **按阶段换血与并发安全**
-   - 跨阶段强制换血（`explore-*` ➔ `kill` ➔ `code-*`）与 `test-runner` 定期换血，彻底清理探索与构建缓存噪音。
-   - 跨子系统按互斥文件分片并行改码 + 单实例串行收口构建，多清单逐单提交水位控制（`WIP ≤ 2`），终审落袋后再统一 `kill` 清场。
+平时用 AI 写稍微复杂点的需求，经常会遇到两个头疼问题：
+
+1. **主模型上下文很快被垃圾日志塞满**：翻十几个文件、改几轮代码、跑编译报错几百行，贵又聪明的主模型（Neon / Carbon / Opus 等）上下文一下就脏了，越聊越慢、越聊越糊涂，还特别烧额度。
+2. **完整的 Swarm 又太重**：普通开发任务动不动拉起旁白、监控、专职审查员一堆角色，反而啰嗦、耗时、费 Token。
+
+**SWML 的做法很直接：**
+
+- **大脑和手脚分开**：主会话只管和你对齐需求、设计方案和最终验收；查大文件、改代码、跑构建和测试、修报错、做 Git 提交，全部隔离在 `gemini-4-hydrogen-high` Worker 里完成，满屏日志不会污染主对话。
+- **不养闲人**：只建真正干活的 Worker，严禁创建旁白（narrator）、监控（monitor）之类的陪跑角色。
+- **干完一阶段就换干净的 Worker**：先派只读 Worker 查清楚代码，查完直接销毁；真正写代码时再开全新的 Worker，不把查代码时的废话带进编码阶段。
+- **干完由主模型亲自验收**：Worker 跑完测试后不会直接结束，主模型会自己看一遍 `git diff`，专门盯着有没有跳过测试、放松断言、吞异常这些偷懒行为；真碰到改 2~3 次还过不了的硬骨头，Worker 会自动停手，交给主模型接管。
+- **小改动不折腾**：只是改改文档，或者 5 行以内一眼看穿的小修改，主模型直接顺手改了，绝不杀鸡用牛刀。
+
+---
+
+## 工作流程长这样
+
+```text
+你输入 /swml + 需求
+  ↓
+主会话（大脑）：和你确认需求、定方案
+  ├─ 需要摸清代码？先派只读 Worker 去查，结论回来就销毁
+  ↓
+Hydrogen Worker（手脚）：拿到完整方案，自己去改代码、跑编译、跑单测
+  ├─ 编译报错最多修 3 次，逻辑/断言失败最多修 2 次，超限自动停手求助
+  ↓
+主会话（验收）：看一遍 git diff 确认没问题 ➔ 让 Worker 提交代码 ➔ 销毁清场
+```
 
 ---
 
 ## 安装方式
 
-### 方式一：作为全局 Skill 安装（推荐）
+选一种你顺手的就行：
+
+### 方式一：装成全局 Skill（推荐，最省事）
 
 ```bash
 git clone https://github.com/hardworkDAD/swarm-lite.git
@@ -34,41 +54,37 @@ mkdir -p ~/.gemini/config/skills
 cp -r swarm-lite/skills/swml ~/.gemini/config/skills/swml
 ```
 
-### 方式二：作为 Antigravity Plugin 安装
+### 方式二：装成 Antigravity 插件
 
 ```bash
 git clone https://github.com/hardworkDAD/swarm-lite.git
 agy plugin install ./swarm-lite
 ```
 
-### 方式三：仅在单个项目仓库内启用
+### 方式三：只在某一个项目里用
 
-将本仓库的 `skills/swml` 复制到目标项目的 `.agents/skills/swml/` 目录即可随项目共享。
-
----
-
-## 使用方法
-
-本技能采用**手动触发**策略，日常对话不会自动激活，避免无谓消耗调度开销。
-
-- 在 Antigravity CLI (`agy`) 或 IDE 对话中输入 `/swml`（或显式要求“启用主从隔离模式”）即可激活。
-- 与会话中同时启用的其他设计、规范或工作流技能（如 `tdd`、`codebase-design`、`code-review` 等）正交叠加，互不覆盖。
-- **自定义执行面模型**：默认执行面 Worker 绑定 `gemini-4-hydrogen-high`；如需临时切换模型，在对话中直接指定即可；如需长期更改默认执行模型，直接编辑 [`skills/swml/SKILL.md`](skills/swml/SKILL.md) 中的 `model` 字段。
+把仓库里的 `skills/swml` 复制到目标项目的 `.agents/skills/swml/` 目录下即可。
 
 ---
 
-## 仓库结构
+## 怎么用
+
+- **平时不会乱触发**：这是手动开关，日常聊天完全不会自动启动。
+- **干重活时开启**：在 Antigravity CLI 或 IDE 对话里输入 `/swml`（或者直接说“用主从隔离模式”）就会生效。
+- **能和其他技能一起用**：它只管“谁来干活、怎么隔离上下文”，和你平时用的 `/tdd`、设计规范、Code Review 技能完全不冲突。
+- **想换执行模型？** Worker 默认用 `gemini-4-hydrogen-high`。临时想换直接在对话里说一声就行；想永久换，直接改 [`skills/swml/SKILL.md`](skills/swml/SKILL.md) 里的模型名。
+
+---
+
+## 目录说明
 
 ```text
 swarm-lite/
-├── plugin.json             # Antigravity 插件清单（支持 agy plugin install / validate）
-├── assets/
-│   └── logo.svg            # 插件图标
-├── skills/
-│   └── swml/
-│       └── SKILL.md        # /swml 主从隔离研发调度协议核心指令
+├── skills/swml/SKILL.md   # 核心技能文件（真正起作用的就是它）
+├── plugin.json            # Antigravity 插件信息（支持 agy plugin install）
+├── assets/logo.svg        # 插件图标
 ├── README.md
-└── LICENSE                 # MIT License
+└── LICENSE                # MIT 协议
 ```
 
 ---
