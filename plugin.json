@@ -1,0 +1,15 @@
+{
+  "name": "swarm-lite",
+  "version": "1.0.0",
+  "description": "SWML (Swarm Lite) — Lightweight master-worker context isolation & Hydrogen execution engine skill for Antigravity.",
+  "logo": "assets/logo.svg",
+  "author": {
+    "name": "hardworkDAD",
+    "url": "https://github.com/hardworkDAD"
+  },
+  "homepage": "https://github.com/hardworkDAD/swarm-lite",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hardworkDAD/swarm-lite"
+  }
+}
